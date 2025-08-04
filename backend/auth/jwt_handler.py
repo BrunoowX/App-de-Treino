@@ -22,7 +22,7 @@ def verify_token(token: str) -> Optional[Dict]:
         return payload
     except jwt.ExpiredSignatureError:
         return None
-    except jwt.JWTError:
+    except jwt.InvalidTokenError:
         return None
 
 def get_user_id_from_token(token: str) -> Optional[str]:
