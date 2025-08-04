@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
@@ -8,16 +8,57 @@ import {
   Target,
   Award,
   BarChart3,
-  Activity
+  Activity,
+  Loader2
 } from 'lucide-react';
-import { mockProgressData, mockWorkouts } from '../data/mockData';
+import { api } from '../services/api';
+import { useToast } from '../hooks/use-toast';
 
 const ProgressPage = () => {
   const [selectedPeriod, setSelectedPeriod] = useState('week');
+  const [weeklyProgress, setWeeklyProgress] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
-  const totalVolume = mockProgressData.reduce((acc, data) => acc + data.volume, 0);
-  const avgWeight = Math.round(mockProgressData.reduce((acc, data) => acc + data.weight, 0) / mockProgressData.length);
-  const completedWorkouts = mockWorkouts.filter(w => w.status === 'completed').length;
+  useEffect(() => {
+    loadProgressData();
+  }, []);
+
+  const loadProgressData = async () => {
+    try {
+      setLoading(true);
+      
+      const [progressResponse, statsResponse] = await Promise.all([
+        api.progress.getWeekly(),
+        api.progress.getStats()
+      ]);
+
+      setWeeklyProgress(progressResponse.data);
+      setStats(statsResponse.data);
+      
+    } catch (error) {
+      console.error('Erro ao carregar dados de progresso:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar os dados de progresso",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-red-500 mx-auto mb-4" />
+          <p className="text-gray-400">Carregando seu progresso...</p>
+        </div>
+      </div>
+    );
+  }
 
   const achievements = [
     { title: '7 dias seguidos', description: 'Sequência perfeita!', icon: Award, color: 'text-yellow-500' },
@@ -39,7 +80,9 @@ const ProgressPage = () => {
           <Card className="bg-gray-900 border-gray-800">
             <CardContent className="p-4 text-center">
               <BarChart3 className="h-8 w-8 mx-auto mb-2 text-red-500" />
-              <p className="text-2xl font-bold text-white">{totalVolume.toLocaleString()}</p>
+              <p className="text-2xl font-bold text-white">
+                {stats?.totalVolume ? Math.round(stats.totalVolume).toLocaleString() : '0'}
+              </p>
               <p className="text-sm text-gray-400">Volume Total</p>
             </CardContent>
           </Card>
@@ -47,7 +90,9 @@ const ProgressPage = () => {
           <Card className="bg-gray-900 border-gray-800">
             <CardContent className="p-4 text-center">
               <Activity className="h-8 w-8 mx-auto mb-2 text-green-500" />
-              <p className="text-2xl font-bold text-white">{avgWeight}kg</p>
+              <p className="text-2xl font-bold text-white">
+                {stats?.avgWeight ? Math.round(stats.avgWeight) : '0'}kg
+              </p>
               <p className="text-sm text-gray-400">Peso Médio</p>
             </CardContent>
           </Card>
@@ -59,38 +104,45 @@ const ProgressPage = () => {
             <CardTitle className="text-white">Volume Semanal</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {/* Gráfico de Barras */}
-              <div className="flex items-end justify-between h-48 gap-2">
-                {mockProgressData.map((data, index) => (
-                  <div key={index} className="flex flex-col items-center gap-2 flex-1">
-                    <div className="relative w-full">
-                      <div 
-                        className="bg-gradient-to-t from-red-600 to-red-400 w-full rounded-t transition-all duration-500 hover:from-red-500 hover:to-red-300"
-                        style={{ 
-                          height: `${(data.volume / Math.max(...mockProgressData.map(d => d.volume))) * 100}%`,
-                          minHeight: '12px'
-                        }}
-                      />
-                      <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 text-xs text-white font-medium">
-                        {data.volume}
+            {weeklyProgress.length > 0 ? (
+              <div className="space-y-4">
+                {/* Gráfico de Barras */}
+                <div className="flex items-end justify-between h-48 gap-2">
+                  {weeklyProgress.map((data, index) => (
+                    <div key={index} className="flex flex-col items-center gap-2 flex-1">
+                      <div className="relative w-full">
+                        <div 
+                          className="bg-gradient-to-t from-red-600 to-red-400 w-full rounded-t transition-all duration-500 hover:from-red-500 hover:to-red-300"
+                          style={{ 
+                            height: `${(data.volume / Math.max(...weeklyProgress.map(d => d.volume))) * 100}%`,
+                            minHeight: '12px'
+                          }}
+                        />
+                        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 text-xs text-white font-medium">
+                          {Math.round(data.volume)}
+                        </div>
                       </div>
+                      <span className="text-xs text-gray-400 text-center">
+                        {data.week}
+                      </span>
                     </div>
-                    <span className="text-xs text-gray-400 text-center">
-                      {data.week}
-                    </span>
+                  ))}
+                </div>
+                
+                {/* Legenda */}
+                <div className="flex justify-center gap-6 text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-red-500 rounded"></div>
+                    <span className="text-gray-400">Volume (kg)</span>
                   </div>
-                ))}
-              </div>
-              
-              {/* Legenda */}
-              <div className="flex justify-center gap-6 text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-red-500 rounded"></div>
-                  <span className="text-gray-400">Volume (kg)</span>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-gray-400">Dados de progresso não disponíveis</p>
+                <p className="text-sm text-gray-500 mt-1">Complete alguns treinos para ver seu progresso</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -109,16 +161,22 @@ const ProgressPage = () => {
               <CardContent>
                 <div className="space-y-4">
                   <div className="flex justify-between items-center p-3 bg-gray-800 rounded-lg">
-                    <span className="text-gray-400">Volume desta semana</span>
-                    <span className="text-white font-bold">3,800 kg</span>
+                    <span className="text-gray-400">Volume total</span>
+                    <span className="text-white font-bold">
+                      {stats?.totalVolume ? Math.round(stats.totalVolume).toLocaleString() : '0'} kg
+                    </span>
                   </div>
                   <div className="flex justify-between items-center p-3 bg-gray-800 rounded-lg">
-                    <span className="text-gray-400">Média semanal</span>
-                    <span className="text-white font-bold">3,200 kg</span>
+                    <span className="text-gray-400">Treinos concluídos</span>
+                    <span className="text-white font-bold">
+                      {stats?.completedWorkouts || 0}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
-                    <span className="text-gray-400">Crescimento</span>
-                    <Badge className="bg-green-500 text-white">+18.7%</Badge>
+                    <span className="text-gray-400">Sequência atual</span>
+                    <Badge className="bg-green-500 text-white">
+                      {stats?.currentStreak || 0} dias
+                    </Badge>
                   </div>
                 </div>
               </CardContent>

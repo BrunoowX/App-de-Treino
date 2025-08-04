@@ -15,6 +15,7 @@ import {
   SkipForward
 } from 'lucide-react';
 import { useToast } from '../../hooks/use-toast';
+import { api } from '../../services/api';
 
 const WorkoutSession = () => {
   const location = useLocation();
@@ -28,13 +29,15 @@ const WorkoutSession = () => {
   const [restTime, setRestTime] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [completedSets, setCompletedSets] = useState({});
+  const [workoutData, setWorkoutData] = useState(workout);
+  const [isUpdating, setIsUpdating] = useState(false);
   
   if (!workout) {
     navigate('/dashboard');
     return null;
   }
 
-  const currentExercise = workout.exercises[currentExerciseIndex];
+  const currentExercise = workoutData?.exercises[currentExerciseIndex];
   const exerciseKey = `${currentExerciseIndex}`;
   const currentSetCount = completedSets[exerciseKey] || 0;
   
@@ -87,37 +90,77 @@ const WorkoutSession = () => {
     setIsResting(false);
   };
 
-  const completeSet = () => {
-    const newCount = currentSetCount + 1;
-    setCompletedSets(prev => ({
-      ...prev,
-      [exerciseKey]: newCount
-    }));
+  const completeSet = async () => {
+    if (isUpdating) return;
+    
+    setIsUpdating(true);
+    
+    try {
+      // Call backend API to complete set
+      const response = await api.workouts.completeSet(
+        workoutData.id,
+        currentExercise.id,
+        {
+          setNumber: currentSetCount + 1,
+          weight: currentExercise.weight,
+          reps: currentExercise.reps
+        }
+      );
 
-    if (newCount >= currentExercise.sets) {
-      // Exercício completo
-      toast({
-        title: "Exercício concluído! 🎉",
-        description: `${currentExercise.name} finalizado com sucesso`,
-      });
+      const newCount = currentSetCount + 1;
+      setCompletedSets(prev => ({
+        ...prev,
+        [exerciseKey]: newCount
+      }));
+
+      // Update local workout data
+      const updatedExercises = [...workoutData.exercises];
+      updatedExercises[currentExerciseIndex] = {
+        ...updatedExercises[currentExerciseIndex],
+        completedSets: newCount,
+        completed: newCount >= currentExercise.sets
+      };
       
-      if (currentExerciseIndex < workout.exercises.length - 1) {
-        setTimeout(() => {
-          setCurrentExerciseIndex(prev => prev + 1);
-        }, 1000);
-      } else {
-        // Treino completo
+      setWorkoutData(prev => ({
+        ...prev,
+        exercises: updatedExercises
+      }));
+
+      if (newCount >= currentExercise.sets) {
+        // Exercício completo
         toast({
-          title: "Treino concluído! 🏆",
-          description: "Parabéns! Você finalizou o treino de hoje",
+          title: "Exercício concluído! 🎉",
+          description: `${currentExercise.name} finalizado com sucesso`,
         });
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 2000);
+        
+        if (currentExerciseIndex < workoutData.exercises.length - 1) {
+          setTimeout(() => {
+            setCurrentExerciseIndex(prev => prev + 1);
+          }, 1000);
+        } else {
+          // Treino completo
+          toast({
+            title: "Treino concluído! 🏆",
+            description: "Parabéns! Você finalizou o treino de hoje",
+          });
+          setTimeout(() => {
+            navigate('/dashboard');
+          }, 2000);
+        }
+      } else {
+        // Próxima série
+        startRest();
       }
-    } else {
-      // Próxima série
-      startRest();
+      
+    } catch (error) {
+      console.error('Erro ao completar série:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível registrar a série. Tente novamente.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -139,15 +182,15 @@ const WorkoutSession = () => {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-xl font-bold text-white">{workout.name}</h1>
+            <h1 className="text-xl font-bold text-white">{workoutData.name}</h1>
             <p className="text-gray-400">
-              Exercício {currentExerciseIndex + 1} de {workout.exercises.length}
+              Exercício {currentExerciseIndex + 1} de {workoutData.exercises.length}
             </p>
           </div>
         </div>
         
         <Progress 
-          value={(currentExerciseIndex / workout.exercises.length) * 100} 
+          value={(currentExerciseIndex / workoutData.exercises.length) * 100} 
           className="h-2 bg-gray-800"
         />
       </div>
@@ -237,10 +280,20 @@ const WorkoutSession = () => {
           <div className="space-y-4">
             <Button 
               onClick={completeSet}
+              disabled={isUpdating}
               className="w-full bg-red-500 hover:bg-red-600 text-white h-14 text-lg"
             >
-              <Check className="mr-2 h-6 w-6" />
-              Finalizar Série
+              {isUpdating ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                  Registrando...
+                </>
+              ) : (
+                <>
+                  <Check className="mr-2 h-6 w-6" />
+                  Finalizar Série
+                </>
+              )}
             </Button>
             
             <Button 
@@ -255,14 +308,14 @@ const WorkoutSession = () => {
         )}
 
         {/* Próximos Exercícios */}
-        {currentExerciseIndex < workout.exercises.length - 1 && (
+        {currentExerciseIndex < workoutData.exercises.length - 1 && (
           <Card className="bg-gray-900 border-gray-800">
             <CardHeader>
               <CardTitle className="text-white text-lg">Próximos Exercícios</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {workout.exercises.slice(currentExerciseIndex + 1, currentExerciseIndex + 3).map((exercise, index) => (
+                {workoutData.exercises.slice(currentExerciseIndex + 1, currentExerciseIndex + 3).map((exercise, index) => (
                   <div key={exercise.id} className="flex items-center gap-3 p-2 rounded bg-gray-800/50">
                     <img 
                       src={exercise.image} 
